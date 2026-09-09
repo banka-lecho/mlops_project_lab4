@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/big-data-lab3
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t $IMAGE:latest \
+            -t $IMAGE:${{ github.sha }} \
+            .
+
+      - name: Smoke import check
+        run: |
+          docker run --rm $IMAGE:${{ github.sha }} \
+            python -c "import src.api.main; print('import OK')"
+
+      - name: Run unit tests
+        run: |
+          docker run --rm $IMAGE:${{ github.sha }} sh -c "
+            pip install --quiet pytest httpx &&
+            pytest tests/unit -v
+          "
+
+      - name: Push Docker image
+        run: |
+          docker push $IMAGE:latest
+          docker push $IMAGE:${{ github.sha }}
+
+  functional-test:
+    needs: build-and-push
+    uses: ./.github/workflows/cd.yml
+    secrets: inherit
+    with:
+      image_tag: ${{ github.sha }}

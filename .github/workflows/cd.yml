@@ -1,0 +1,103 @@
+name: CD
+
+on:
+  workflow_call:
+    inputs: &image_tag_input
+      image_tag:
+        description: "Docker image tag to use for the API service. If not provided, the latest image will be used."
+        type: string
+        required: false
+        default: latest
+  workflow_dispatch:
+    inputs: *image_tag_input
+  schedule:
+    - cron: "0 3 * * *"         
+
+jobs:
+  functional:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      API_IMAGE: ${{ inputs.image_tag && format('{0}/big-data-lab3:{1}', secrets.DOCKERHUB_USERNAME, inputs.image_tag) || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Materialize secret files
+        env:
+          CASSANDRA_PASSWORD: ${{ secrets.CASSANDRA_PASSWORD }}
+        run: |
+          cp .env.example .env
+          cp vault/vault.env.example vault/vault.env
+          if [ -n "$API_IMAGE" ]; then echo "API_IMAGE=$API_IMAGE" >> .env; fi
+          cat > vault/seed.sh <<'SEED'
+          export VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root
+          vault kv put secret/mlops-app \
+            CASSANDRA_HOSTS=cassandra \
+            CASSANDRA_PORT=9042 \
+            CASSANDRA_KEYSPACE=dog_emotion_keyspace \
+            CASSANDRA_USER=emotion_app \
+            CASSANDRA_PASSWORD='__CASSANDRA_PASSWORD__' \
+            CASSANDRA_BOOTSTRAP_USER=cassandra \
+            CASSANDRA_BOOTSTRAP_PASSWORD=cassandra
+          SEED
+          sed -i "s|__CASSANDRA_PASSWORD__|${CASSANDRA_PASSWORD}|" vault/seed.sh
+
+      - name: Pull model checkpoint
+        env:
+          GDRIVE_SA_JSON: ${{ secrets.GDRIVE_SA_JSON }}
+        run: |
+          pip install "dvc[gdrive]" "pyOpenSSL==24.2.1" "cryptography<44"
+          echo "$GDRIVE_SA_JSON" > /tmp/sa.json
+          dvc remote modify --local gdrive gdrive_use_service_account true
+          dvc remote modify --local gdrive gdrive_service_account_json_file_path /tmp/sa.json
+          dvc pull expirements/dog_emotion_efficientnet_best.pth.dvc
+
+      - name: Start stack
+        run: |
+          if [ -n "$API_IMAGE" ]; then
+            docker pull "$API_IMAGE"
+            docker compose build vault
+            docker compose up -d --no-build
+          else
+            docker compose up -d --build
+          fi
+
+      - name: Wait for API + DB
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/health | grep -q '"db_connected":true'; then
+              echo "API поднялся и подключился к Cassandra под ролью из Vault"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "API не готов"; docker compose logs --no-color; exit 1
+
+      - name: Load dataset sample
+        run: |
+          docker compose cp tests/functional/data/dataset_sample.csv api:/tmp/dataset_sample.csv
+          docker compose exec -T api python -m src.db.load_dataset --csv-path /tmp/dataset_sample.csv
+
+      - name: Functional tests
+        env:
+          CASSANDRA_CONTAINER: cassandra-dev
+          CASSANDRA_USER: emotion_app
+          CASSANDRA_PASSWORD: ${{ secrets.CASSANDRA_PASSWORD }}
+          CASSANDRA_KEYSPACE: dog_emotion_keyspace
+        run: |
+          pip install -r requirements.txt pytest requests
+          BASE_URL=http://localhost:8000 pytest tests/functional -q
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

@@ -1,0 +1,25 @@
+# API
+fastapi==0.115.0
+uvicorn==0.30.0
+python-multipart==0.0.6
+pydantic==2.13.5
+
+# Модель
+torch==2.8.0
+torchvision==0.23.0
+pillow==11.3.0
+numpy==2.0.2
+
+# Данные и обучение
+pandas==2.3.3
+scikit-learn==1.6.1
+tqdm==4.70.0
+
+# База данных и конфигурация
+cassandra-driver==3.29.3
+python-dotenv==1.2.1
+
+# Секреты и безопасность
+hvac==2.4.0
+
+httpx==0.28.1

@@ -1,0 +1,5 @@
+outs:
+- md5: f0b6081e46fd8746c0b56e81464119e3
+  size: 16357603
+  hash: md5
+  path: dog_emotion_efficientnet_best.pth

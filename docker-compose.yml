@@ -1,0 +1,112 @@
+services:
+  vault:
+    build:
+      context: ./vault
+      dockerfile: Dockerfile
+    image: mlops-vault:local
+    container_name: mlops-vault
+    ports: ["8200:8200"]
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+      VAULT_TOKEN: root
+    healthcheck:
+      test: ["CMD-SHELL", "vault kv get -mount=secret mlops-app >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      retries: 20
+      start_period: 10s
+
+  cassandra:
+    image: cassandra:5.0
+    container_name: cassandra-dev
+
+    ports:
+      - "9042:9042"
+
+    environment:
+      CASSANDRA_CLUSTER_NAME: dev-cluster
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+      MAX_HEAP_SIZE: 1G
+      HEAP_NEWSIZE: 256M
+
+    env_file:
+      - ./vault/vault.env
+
+    command:
+      - bash
+      - -c
+      - >-
+        sed -i
+        -e 's/^authenticator:.*/authenticator: PasswordAuthenticator/'
+        -e 's/^authorizer:.*/authorizer: CassandraAuthorizer/'
+        /etc/cassandra/cassandra.yaml
+        && exec /usr/local/bin/docker-entrypoint.sh cassandra -f
+
+    depends_on:
+      vault:
+        condition: service_healthy
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+      - ./vault/load_secrets.py:/load_secrets.py:ro
+    healthcheck:
+      test: ["CMD-SHELL", "eval \"$$(python3 /load_secrets.py)\" && cqlsh -u \"$$CASSANDRA_BOOTSTRAP_USER\" -p \"$$CASSANDRA_BOOTSTRAP_PASSWORD\" -e 'describe cluster' >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      retries: 30
+      start_period: 60s
+
+  cassandra-init:
+    image: cassandra:5.0
+    depends_on:
+      cassandra:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+    environment:
+      VAULT_SECRET_PATH: mlops-app
+    env_file:
+      - ./vault/vault.env
+    volumes:
+      - ./src/db/schema.cql:/schema.cql:ro
+      - ./src/db/init_db.sh:/init_db.sh:ro
+      - ./vault/load_secrets.py:/load_secrets.py:ro
+    command: ["bash", "/init_db.sh"]
+
+  api:
+    depends_on:
+      vault:
+        condition: service_started
+
+      cassandra:
+        condition: service_healthy
+
+      cassandra-init:
+        condition: service_completed_successfully
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: ${API_IMAGE:-big-data-lab3:local}
+
+    container_name: big-data-lab3-api
+
+    ports:
+      - "${API_PORT}:8000"
+
+    volumes:
+      - ./expirements:/app/expirements:ro
+      - ./data:/app/data:ro
+      - ./logs:/app/logs
+
+    env_file:
+      - .env
+      - ./vault/vault.env
+
+    environment:
+      VAULT_SECRET_PATH: mlops-app
+
+    restart: unless-stopped
+
+volumes:
+  cassandra-data:

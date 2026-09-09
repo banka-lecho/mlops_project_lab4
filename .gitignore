@@ -1,0 +1,38 @@
+# garbage
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+*.DS_Store
+logs/
+
+# secrets
+gdrive-key.json
+*.gdrive-key.json
+
+# env / secrets
+.env
+.env.*
+!.env.example
+secrets/
+
+pyproject.toml
+requirements-dev.txt
+
+.env
+.env.*
+!.env.example
+*.secret
+vault/data/
+vault/config/
+
+# venv
+.mlops4_venv/
+.DS_Store
+
+# secrets
+vault/seed.sh
+vault/vault.env
+!vault/vault.env.example
