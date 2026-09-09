@@ -88,8 +88,6 @@ class KafkaConsumer:
 
 kafka_consumer = KafkaConsumer()
 
-
-# TODO:: должно ли это здесь вызываться или лучше в lifespan
 async def main():
     await kafka_consumer.start()
     await kafka_consumer.consume()
