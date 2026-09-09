@@ -31,7 +31,6 @@ jobs:
       - name: Materialize secret files
         env:
           CASSANDRA_PASSWORD: ${{ secrets.CASSANDRA_PASSWORD }}
-        # TODO:: здесь потом надо заменить секреты кафки не на захаркоженные значения, а на реальные секреты из Vault
         run: |
           cp .env.example .env
           cp vault/vault.env.example vault/vault.env
@@ -46,9 +45,9 @@ jobs:
             CASSANDRA_PASSWORD='__CASSANDRA_PASSWORD__' \
             CASSANDRA_BOOTSTRAP_USER=cassandra \
             CASSANDRA_BOOTSTRAP_PASSWORD=cassandra \
-            KAFKA_BOOTSTRAP_SERVERS=kafka:9092 \
-            KAFKA_TOPIC_PREDICTIONS=predictions.created \
-            KAFKA_CONSUMER_GROUP=dog-emotion-consumer
+            KAFKA_BOOTSTRAP_SERVERS=__KAFKA_BOOTSTRAP_SERVERS__ \
+            KAFKA_TOPIC_PREDICTIONS=__KAFKA_TOPIC_PREDICTIONS__ \
+            KAFKA_CONSUMER_GROUP=__KAFKA_CONSUMER_GROUP__
           SEED
           sed -i "s|__CASSANDRA_PASSWORD__|${CASSANDRA_PASSWORD}|" vault/seed.sh
 
