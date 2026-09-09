@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/big-data-lab3
+      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/big-data-lab4
 
     steps:
       - name: Checkout repository

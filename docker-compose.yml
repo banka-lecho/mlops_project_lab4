@@ -113,6 +113,31 @@ services:
       - ./vault/load_secrets.py:/load_secrets.py:ro
     command: ["bash", "/init_db.sh"]
 
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${API_IMAGE:-big-data-lab4:local}
+    container_name: dog-emotion-consumer
+    command: ["python", "-m", "src.kafka.consumer"]
+    depends_on:
+      vault:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
+      cassandra-init:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+    env_file:
+      - .env
+      - ./vault/vault.env
+    environment:
+      VAULT_SECRET_PATH: mlops-app
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
   api:
     depends_on:
       vault:
@@ -124,13 +149,16 @@ services:
       cassandra-init:
         condition: service_completed_successfully
 
+      kafka: 
+        condition: service_healthy
+
     build:
       context: .
       dockerfile: Dockerfile
 
-    image: ${API_IMAGE:-big-data-lab3:local}
+    image: ${API_IMAGE:-big-data-lab4:local}
 
-    container_name: big-data-lab3-api
+    container_name: big-data-lab4-api
 
     ports:
       - "${API_PORT}:8000"

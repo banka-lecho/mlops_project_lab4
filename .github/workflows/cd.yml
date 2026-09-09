@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      API_IMAGE: ${{ inputs.image_tag && format('{0}/big-data-lab3:{1}', secrets.DOCKERHUB_USERNAME, inputs.image_tag) || '' }}
+      API_IMAGE: ${{ inputs.image_tag && format('{0}/big-data-lab4:{1}', secrets.DOCKERHUB_USERNAME, inputs.image_tag) || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +46,7 @@ jobs:
             CASSANDRA_PASSWORD='__CASSANDRA_PASSWORD__' \
             CASSANDRA_BOOTSTRAP_USER=cassandra \
             CASSANDRA_BOOTSTRAP_PASSWORD=cassandra \
-            KAFKA_BOOTSTRAP_SERVERS=kafka:9092 \ 
+            KAFKA_BOOTSTRAP_SERVERS=kafka:9092 \
             KAFKA_TOPIC_PREDICTIONS=predictions.created \
             KAFKA_CONSUMER_GROUP=dog-emotion-consumer
           SEED

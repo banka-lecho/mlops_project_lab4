@@ -18,7 +18,6 @@ class FakeRepository:
     def __init__(self):
         self.rows = {}
         self.is_ready = True
-        self.fail_on_save = False
 
     def connect(self) -> None:
         pass
@@ -37,9 +36,7 @@ class FakeRepository:
         device,
         created_at=None,
     ):
-        if self.fail_on_save:
-            raise RuntimeError("Cassandra недоступна")
-
+        """Записывает результат предсказания в память."""
         created_at = created_at or datetime.now(timezone.utc)
 
         self.rows[request_id] = {
@@ -57,6 +54,27 @@ class FakeRepository:
         return created_at
 
 
+class FakeProducer:
+    """Подмена KafkaProducer: запоминает отправленные события."""
+
+    def __init__(self):
+        self.sent = []
+        self.is_ready = True
+        self.fail_on_send = False
+
+    async def start(self) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
+
+    async def send(self, value: dict) -> None:
+        if self.fail_on_send:
+            raise RuntimeError("Kafka недоступна")
+
+        self.sent.append(value)
+
+
 @pytest.fixture
 def fake_repo(monkeypatch):
     """Подменяет глобальный репозиторий в модуле API."""
@@ -65,8 +83,16 @@ def fake_repo(monkeypatch):
     return repo
 
 
+@pytest.fixture
+def fake_producer(monkeypatch):
+    """Подменяет глобальный Kafka-продюсер в модуле API."""
+    producer = FakeProducer()
+    monkeypatch.setattr("src.api.main.kafka_producer", producer)
+    return producer
+
+
 @pytest.fixture(autouse=True)
-def setup_mocks(monkeypatch, fake_repo):
+def setup_mocks(monkeypatch, fake_repo, fake_producer):
     """
     Эта фикстура автоматически применяется ко всем тестам.
     Она подменяет чтение реального config.ini и тяжеловесную ML-модель.
@@ -155,12 +181,44 @@ def test_predict_invalid_image(client):
     assert "Невозможно прочитать файл" in response.json()["detail"]
 
 
-def test_predict_survives_db_failure(client, test_image, fake_repo):
+def test_predict_publishes_event_to_kafka(client, test_image, fake_producer):
     """
-    Ключевой сценарий: инференс уже отработал, и сбой записи в БД не
-    должен его обесценивать.
+    Результат инференса уходит в топик, и в событии есть все поля,
+    которые consumer передаёт в save_prediction.
     """
-    fake_repo.fail_on_save = True
+    response = client.post(
+        "/predict",
+        files={"image": ("test.jpg", test_image, "image/jpeg")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["published"] is True
+
+    assert len(fake_producer.sent) == 1
+    event = fake_producer.sent[0]
+
+    assert event["request_id"] == response.json()["request_id"]
+    assert event["predicted_class"] == "angry"
+    assert event["image_name"] == "test.jpg"
+
+    assert set(event) >= {
+        "request_id",
+        "created_at",
+        "image_name",
+        "predicted_class",
+        "probabilities",
+        "process_time_ms",
+        "model_checkpoint",
+        "device",
+    }
+
+
+def test_predict_survives_kafka_failure(client, test_image, fake_producer):
+    """
+    Ключевой сценарий: инференс уже отработал, и сбой публикации в Kafka
+    не должен его обесценивать.
+    """
+    fake_producer.fail_on_send = True
 
     response = client.post(
         "/predict",
@@ -170,6 +228,6 @@ def test_predict_survives_db_failure(client, test_image, fake_repo):
     assert response.status_code == 200
     data = response.json()
 
-    assert data["saved"] is False
+    assert data["published"] is False
     assert data["predicted_class"] == "angry"
     assert data["probabilities"]["angry"] == 0.7

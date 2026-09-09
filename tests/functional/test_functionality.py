@@ -2,6 +2,7 @@ import csv
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -76,9 +77,14 @@ def test_prediction_round_trip(base_url):
             f"{base_url}/predict",
             files={"image": ("happy_dog.jpg", image, "image/jpeg")},
         ).json()
-    assert predicted["saved"] is True
+    assert predicted["published"] is True
 
-    record = requests.get(f"{base_url}/predictions/{predicted['request_id']}")
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        record = requests.get(f"{base_url}/predictions/{predicted['request_id']}")
+        if record.status_code == 200:
+            break
+        time.sleep(0.5)
     assert record.status_code == 200
     assert record.json()["predicted_class"] == predicted["predicted_class"]
 
@@ -115,15 +121,30 @@ def _dataset_row_count() -> int:
     """
     container, user, password, keyspace = (
         os.environ[name]
-        for name in ("CASSANDRA_CONTAINER", "CASSANDRA_USER", "CASSANDRA_PASSWORD", "CASSANDRA_KEYSPACE")
+        for name in (
+            "CASSANDRA_CONTAINER",
+            "CASSANDRA_USER",
+            "CASSANDRA_PASSWORD",
+            "CASSANDRA_KEYSPACE",
+        )
     )
     output = subprocess.run(
         [
-            "docker", "exec", container, "cqlsh",
-            "-u", user, "-p", password,
-            "-e", f"SELECT count(*) FROM {keyspace}.dataset;",
+            "docker",
+            "exec",
+            container,
+            "cqlsh",
+            "-u",
+            user,
+            "-p",
+            password,
+            "-e",
+            f"SELECT count(*) FROM {keyspace}.dataset;",
         ],
-        capture_output=True, text=True, check=True, timeout=30,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
     ).stdout
 
     return int(re.search(r"\d+", output).group())

@@ -46,9 +46,9 @@ def required_env(name: str) -> str:
 class KafkaSettings:
     """Параметры подключения к Kafka."""
 
-    kafka_bootstrap_servers: str
-    kafka_topic_predictions: str
-    kafka_consumer_group: str
+    bootstrap_servers: str
+    topic: str
+    consumer_group: str
 
 
 def kafka_settings() -> KafkaSettings:
@@ -56,13 +56,11 @@ def kafka_settings() -> KafkaSettings:
 
     secrets = load_vault_secrets()
 
-    kafka_bootstrap_servers = secrets["KAFKA_BOOTSTRAP_SERVERS"]
-    kafka_topic_predictions = secrets["KAFKA_TOPIC_PREDICTIONS"]
-    kafka_consumer_group = secrets["KAFKA_CONSUMER_GROUP"]
+    bootstrap_servers = secrets["KAFKA_BOOTSTRAP_SERVERS"]
+    topic = secrets["KAFKA_TOPIC_PREDICTIONS"]
+    consumer_group = secrets["KAFKA_CONSUMER_GROUP"]
 
-    return KafkaSettings(
-        kafka_bootstrap_servers, kafka_topic_predictions, kafka_consumer_group
-    )
+    return KafkaSettings(bootstrap_servers, topic, consumer_group)
 
 
 @dataclass(frozen=True)

@@ -3,10 +3,10 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-# TODO:: здесь надо добавить схему для кафки, чтобы можно было отправлять предсказания в топик
-
 
 class HealthResponse(BaseModel):
+    """Ответ на запрос /health."""
+
     status: str = Field(..., description="ok или degraded")
     model_loaded: bool
     db_connected: bool = Field(
@@ -15,6 +15,8 @@ class HealthResponse(BaseModel):
 
 
 class ModelInfoResponse(BaseModel):
+    """Ответ на запрос /model/info."""
+
     checkpoint_path: str
     device: str
     classes: list[str]
@@ -22,14 +24,22 @@ class ModelInfoResponse(BaseModel):
 
 
 class PredictResponse(BaseModel):
+    """Ответ на запрос /predict."""
+
     request_id: uuid.UUID
     predicted_class: str
     probabilities: dict[str, float]
     process_time_ms: float
-    saved: bool = Field(False, description="Записано ли предсказание в Cassandra")
+    published: bool = Field(
+        False,
+        description="Опубликовано ли предсказание в топик Kafka. "
+        "В Cassandra его пишет consumer, поэтому запись появляется позже.",
+    )
 
 
 class PredictionRecord(BaseModel):
+    """Запись предсказания в Cassandra."""
+
     request_id: uuid.UUID
     created_at: datetime
     image_name: str
