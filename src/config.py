@@ -43,6 +43,29 @@ def required_env(name: str) -> str:
 
 
 @dataclass(frozen=True)
+class KafkaSettings:
+    """Параметры подключения к Kafka."""
+
+    kafka_bootstrap_servers: str
+    kafka_topic_predictions: str
+    kafka_consumer_group: str
+
+
+def kafka_settings() -> KafkaSettings:
+    """Настройки подключения к Kafka из секретов Vault."""
+
+    secrets = load_vault_secrets()
+
+    kafka_bootstrap_servers = secrets["KAFKA_BOOTSTRAP_SERVERS"]
+    kafka_topic_predictions = secrets["KAFKA_TOPIC_PREDICTIONS"]
+    kafka_consumer_group = secrets["KAFKA_CONSUMER_GROUP"]
+
+    return KafkaSettings(
+        kafka_bootstrap_servers, kafka_topic_predictions, kafka_consumer_group
+    )
+
+
+@dataclass(frozen=True)
 class CassandraSettings:
     """Параметры подключения к Cassandra."""
 
@@ -77,7 +100,7 @@ def cassandra_settings() -> CassandraSettings:
     )
 
 
-def load_config(path: Path = None) -> configparser.ConfigParser:
+def load_config(path: Path | None = None) -> configparser.ConfigParser:
     """Загрузка config.ini: пути к данным и модели, никаких секретов."""
     path = Path(path) if path else CONFIG_FILE
 
@@ -93,7 +116,7 @@ def load_config(path: Path = None) -> configparser.ConfigParser:
 def path_from_config(
     section: str,
     key: str,
-    cfg: configparser.ConfigParser = None,
+    cfg: configparser.ConfigParser | None = None,
 ) -> Path:
     """Путь из config.ini; относительный отсчитывается от корня репозитория."""
     cfg = cfg or load_config()
@@ -108,7 +131,7 @@ def path_from_config(
     return path if path.is_absolute() else ROOT / path
 
 
-def checkpoint_path(cfg: configparser.ConfigParser = None) -> Path:
+def checkpoint_path(cfg: configparser.ConfigParser | None = None) -> Path:
     """Путь к чекпоинту обученного классификатора (.pth)."""
     path = path_from_config("MODEL", "checkpoint_path", cfg)
 

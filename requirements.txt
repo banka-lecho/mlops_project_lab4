@@ -22,4 +22,7 @@ python-dotenv==1.2.1
 # Секреты и безопасность
 hvac==2.4.0
 
+# Kafka
+aiokafka==0.14.0 
+
 httpx==0.28.1

@@ -18,6 +18,7 @@ from PIL import Image
 
 from src.config import checkpoint_path, load_config
 from src.db.cassandra_client import CassandraRepository, cassandra_repository
+from src.kafka.producer import kafka_producer
 from src.logger import get_logger
 from src.model import ModelNotLoadedError, classifier_service
 
@@ -59,9 +60,17 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Cassandra недоступна, предсказания сохраняться не будут")
 
+    try:
+        await kafka_producer.start()
+    except Exception:
+        logger.exception(
+            "Kafka недоступна, предсказания не будут публиковаться в топик"
+        )
+
     yield
 
     cassandra_repository.shutdown()
+    await kafka_producer.stop()
     logger.info("Остановка сервиса и БД, очистка ресурсов.")
 
 
@@ -160,6 +169,20 @@ async def predict(
             saved = True
         except Exception:
             logger.exception("Не удалось сохранить предсказание: %s", request_id)
+            
+    if kafka_producer.is_ready:
+        try:
+            await kafka_producer.send(
+                {
+                    "request_id": str(request_id),
+                    "predicted_class": predicted_class,
+                    "probabilities": probabilities,
+                    "process_time_ms": process_time,
+                    "saved": saved,
+                }
+            )
+        except Exception:
+            logger.exception("Не удалось отправить предсказание в Kafka: %s", request_id)
 
     return PredictResponse(
         request_id=request_id,

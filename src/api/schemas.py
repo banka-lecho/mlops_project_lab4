@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+# TODO:: здесь надо добавить схему для кафки, чтобы можно было отправлять предсказания в топик
+
 
 class HealthResponse(BaseModel):
     status: str = Field(..., description="ok или degraded")
