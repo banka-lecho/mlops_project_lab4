@@ -6,21 +6,22 @@ from datetime import datetime
 from aiokafka import AIOKafkaConsumer
 
 from src.config import KafkaSettings, kafka_settings
-from src.db.cassandra_client import cassandra_repository
+from src.db.cassandra_client import CassandraRepository, cassandra_repository
 from src.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-class KafkaConsumer:
+class PredictionConsumer:
     def __init__(
         self,
+        repository: CassandraRepository,
         settings: KafkaSettings | None = None,
     ):
         self._settings = settings
         self.topic = None
         self.consumer = None
-        self.cassandra_repository = cassandra_repository
+        self.cassandra_repository = repository
 
     @property
     def is_ready(self) -> bool:
@@ -35,12 +36,36 @@ class KafkaConsumer:
 
         return self._settings
 
+    async def start(self):
+        """Инициализация и запуск Kafka consumer."""
+        self.topic = self.settings.topic
+
+        consumer = AIOKafkaConsumer(
+            self.topic,
+            bootstrap_servers=self.settings.bootstrap_servers,
+            value_deserializer=lambda v: json.loads(v.decode("utf-8")),
+            auto_offset_reset="earliest",
+            group_id=self.settings.consumer_group,
+        )
+        await consumer.start()
+
+        self.consumer = consumer
+
+        logger.info(
+            "Kafka consumer подписан на топик %s, группа %s",
+            self.topic,
+            self.settings.consumer_group,
+        )
+
     async def stop(self):
+        """Остановка Kafka consumer."""
         if self.consumer:
             await self.consumer.stop()
-        self.cassandra_repository.shutdown()
+            self.consumer = None
+            logger.info("Kafka consumer остановлен")
 
     async def save_consumed_event(self, event: dict):
+        """Сохранение события предсказания в Cassandra."""
         try:
             await asyncio.to_thread(
                 self.cassandra_repository.save_prediction,
@@ -54,44 +79,37 @@ class KafkaConsumer:
                 device=event["device"],
             )
         except Exception:
-            # TODO:: здесь надо залогать нормально
-            logger.exception(
-                "Не удалось сохранить предсказание: %s", event["request_id"]
-            )
+            logger.exception("Не удалось сохранить событие в Cassandra: %r", event)
 
     async def consume(self):
+        """Асинхронное потребление сообщений из Kafka и сохранение их в Cassandra."""
         if not self.consumer:
-            raise RuntimeError("Consumer is not started. Call start() first.")
+            raise RuntimeError("Consumer не запущен: сначала вызовите start()")
 
-        try:
-            async for msg in self.consumer:
-                event = msg.value
-                await self.save_consumed_event(event)
-                print(f"Consumed prediction event: {event['request_id']}")
-        finally:
-            await self.stop()
-
-    async def start(self):
-        # TODO:: почему нужно, чтобы consumer стартовал после cassandra_repository.connect()?
-        self.cassandra_repository.connect()
-        self._settings = self.settings
-        self.topic = self.settings.topic
-        self.consumer = AIOKafkaConsumer(
-            self.topic,
-            bootstrap_servers=self.settings.bootstrap_servers,
-            value_deserializer=lambda v: json.loads(v.decode("utf-8")),
-            auto_offset_reset="earliest",
-            group_id=self.settings.consumer_group,
-        )
-        await self.consumer.start()
-
-
-kafka_consumer = KafkaConsumer()
+        async for msg in self.consumer:
+            logger.info(
+                "Получено событие из %s: партиция %s, оффсет %s",
+                msg.topic,
+                msg.partition,
+                msg.offset,
+            )
+            await self.save_consumed_event(msg.value)
 
 
 async def main():
-    await kafka_consumer.start()
-    await kafka_consumer.consume()
+    """Главная функция для запуска консьюмера предсказаний. Сначала БД, потом Kafka."""
+    cassandra_repository.connect()
+    consumer = PredictionConsumer(repository=cassandra_repository)
+
+    try:
+        await consumer.start()
+        await consumer.consume()
+    except Exception:
+        logger.exception("Консьюмер предсказаний остановлен из-за ошибки")
+        raise
+    finally:
+        await consumer.stop()
+        cassandra_repository.shutdown()
 
 
 if __name__ == "__main__":
