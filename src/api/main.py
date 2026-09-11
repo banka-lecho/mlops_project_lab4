@@ -99,6 +99,7 @@ async def health():
         status="ok" if classifier_service.is_ready else "degraded",
         model_loaded=classifier_service.is_ready,
         db_connected=cassandra_repository.is_ready,
+        kafka_connected=kafka_producer.is_ready,
     )
 
 

@@ -141,7 +141,7 @@ services:
   api:
     depends_on:
       vault:
-        condition: service_started
+        condition: service_healthy
 
       cassandra:
         condition: service_healthy
