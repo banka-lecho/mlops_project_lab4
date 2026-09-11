@@ -12,6 +12,9 @@ class HealthResponse(BaseModel):
     db_connected: bool = Field(
         False, description="Установлено ли подключение к Cassandra"
     )
+    kafka_connected: bool = Field(
+        False, description="Запущен ли Kafka-продюсер для публикации предсказаний"
+    )
 
 
 class ModelInfoResponse(BaseModel):

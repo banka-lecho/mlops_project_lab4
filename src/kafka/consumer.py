@@ -72,7 +72,7 @@ class KafkaConsumer:
             await self.stop()
 
     async def start(self):
-        # TODO:: должен ли быть старт async?
+        # TODO:: почему нужно, чтобы consumer стартовал после cassandra_repository.connect()?
         self.cassandra_repository.connect()
         self._settings = self.settings
         self.topic = self.settings.topic
@@ -89,7 +89,6 @@ class KafkaConsumer:
 kafka_consumer = KafkaConsumer()
 
 
-# TODO:: должно ли это здесь вызываться или лучше в lifespan
 async def main():
     await kafka_consumer.start()
     await kafka_consumer.consume()

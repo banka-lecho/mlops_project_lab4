@@ -151,6 +151,7 @@ def test_health_endpoint(client):
         "status": "ok",
         "model_loaded": True,
         "db_connected": True,
+        "kafka_connected": True,
     }
 
 

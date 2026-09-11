@@ -31,7 +31,13 @@ jobs:
       - name: Materialize secret files
         env:
           CASSANDRA_PASSWORD: ${{ secrets.CASSANDRA_PASSWORD }}
+          KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS }}
+          KAFKA_TOPIC_PREDICTIONS: ${{ secrets.KAFKA_TOPIC_PREDICTIONS }}
+          KAFKA_CONSUMER_GROUP: ${{ secrets.KAFKA_CONSUMER_GROUP }}
         run: |
+          : "${KAFKA_BOOTSTRAP_SERVERS:?Не задан секрет KAFKA_BOOTSTRAP_SERVERS}"
+          : "${KAFKA_TOPIC_PREDICTIONS:?Не задан секрет KAFKA_TOPIC_PREDICTIONS}"
+          : "${KAFKA_CONSUMER_GROUP:?Не задан секрет KAFKA_CONSUMER_GROUP}"
           cp .env.example .env
           cp vault/vault.env.example vault/vault.env
           if [ -n "$API_IMAGE" ]; then echo "API_IMAGE=$API_IMAGE" >> .env; fi
@@ -50,6 +56,13 @@ jobs:
             KAFKA_CONSUMER_GROUP=__KAFKA_CONSUMER_GROUP__
           SEED
           sed -i "s|__CASSANDRA_PASSWORD__|${CASSANDRA_PASSWORD}|" vault/seed.sh
+          sed -i "s|__KAFKA_BOOTSTRAP_SERVERS__|${KAFKA_BOOTSTRAP_SERVERS}|" vault/seed.sh
+          sed -i "s|__KAFKA_TOPIC_PREDICTIONS__|${KAFKA_TOPIC_PREDICTIONS}|" vault/seed.sh
+          sed -i "s|__KAFKA_CONSUMER_GROUP__|${KAFKA_CONSUMER_GROUP}|" vault/seed.sh
+          if grep -q '__[A-Z_]*__' vault/seed.sh; then
+            echo "В seed.sh остались неподставленные плейсхолдеры:"; grep -o '__[A-Z_]*__' vault/seed.sh
+            exit 1
+          fi
 
       - name: Pull model checkpoint
         env:
@@ -71,16 +84,20 @@ jobs:
             docker compose up -d --build
           fi
 
-      - name: Wait for API + DB
+      - name: Wait for API, DB and Kafka
         run: |
           for i in $(seq 1 60); do
-            if curl -sf http://localhost:8000/health | grep -q '"db_connected":true'; then
-              echo "API поднялся и подключился к Cassandra под ролью из Vault"
+            HEALTH="$(curl -sf http://localhost:8000/health || true)"
+            if echo "$HEALTH" | grep -q '"db_connected":true' \
+               && echo "$HEALTH" | grep -q '"kafka_connected":true'; then
+              echo "API поднялся: Cassandra и Kafka подключены по секретам из Vault"
               exit 0
             fi
             sleep 5
           done
-          echo "API не готов"; docker compose logs --no-color; exit 1
+          echo "API не готов. Последний ответ /health: $HEALTH"
+          docker compose logs --no-color
+          exit 1
 
       - name: Load dataset sample
         run: |
