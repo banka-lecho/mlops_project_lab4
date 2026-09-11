@@ -55,6 +55,7 @@ async def lifespan(app: fastapi.FastAPI):
 
     try:
         await kafka_producer.start()
+        logger.info("Kafka producer подключён, топик: %s", kafka_producer.topic)
     except Exception:
         logger.exception(
             "Kafka недоступна, предсказания не будут публиковаться в топик"
@@ -107,7 +108,7 @@ async def health():
 async def model_info():
     """Информация о модели и её состоянии."""
     if not classifier_service.is_ready:
-        logger.exception("Модель еще не загружена или не получилось ее загрузить.")
+        logger.error("Модель еще не загружена или не получилось ее загрузить.")
         raise ModelNotLoadedError
 
     return ModelInfoResponse(
@@ -130,7 +131,7 @@ async def predict(
     GET /predictions/{request_id} с задержкой.
     """
     if not classifier_service.is_ready:
-        logger.exception("Модель еще не загружена или не получилось ее загрузить.")
+        logger.error("Модель еще не загружена или не получилось ее загрузить.")
         raise ModelNotLoadedError
 
     try:
@@ -172,10 +173,16 @@ async def predict(
                 }
             )
             published = True
+            logger.info("Предсказание %s опубликовано в Kafka", request_id)
         except Exception:
             logger.exception(
                 "Не удалось отправить предсказание в Kafka: %s", request_id
             )
+    else:
+        logger.warning(
+            "Kafka producer не запущен, предсказание %s не будет сохранено",
+            request_id,
+        )
 
     return PredictResponse(
         request_id=request_id,
