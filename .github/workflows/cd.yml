@@ -31,8 +31,13 @@ jobs:
       - name: Materialize secret files
         env:
           CASSANDRA_PASSWORD: ${{ secrets.CASSANDRA_PASSWORD }}
-        # TODO:: здесь потом надо заменить секреты кафки не на захаркоженные значения, а на реальные секреты из Vault
+          KAFKA_BOOTSTRAP_SERVERS: ${{ secrets.KAFKA_BOOTSTRAP_SERVERS }}
+          KAFKA_TOPIC_PREDICTIONS: ${{ secrets.KAFKA_TOPIC_PREDICTIONS }}
+          KAFKA_CONSUMER_GROUP: ${{ secrets.KAFKA_CONSUMER_GROUP }}
         run: |
+          : "${KAFKA_BOOTSTRAP_SERVERS:?Не задан секрет KAFKA_BOOTSTRAP_SERVERS}"
+          : "${KAFKA_TOPIC_PREDICTIONS:?Не задан секрет KAFKA_TOPIC_PREDICTIONS}"
+          : "${KAFKA_CONSUMER_GROUP:?Не задан секрет KAFKA_CONSUMER_GROUP}"
           cp .env.example .env
           cp vault/vault.env.example vault/vault.env
           if [ -n "$API_IMAGE" ]; then echo "API_IMAGE=$API_IMAGE" >> .env; fi
@@ -46,11 +51,18 @@ jobs:
             CASSANDRA_PASSWORD='__CASSANDRA_PASSWORD__' \
             CASSANDRA_BOOTSTRAP_USER=cassandra \
             CASSANDRA_BOOTSTRAP_PASSWORD=cassandra \
-            KAFKA_BOOTSTRAP_SERVERS=kafka:9092 \
-            KAFKA_TOPIC_PREDICTIONS=predictions.created \
-            KAFKA_CONSUMER_GROUP=dog-emotion-consumer
+            KAFKA_BOOTSTRAP_SERVERS=__KAFKA_BOOTSTRAP_SERVERS__ \
+            KAFKA_TOPIC_PREDICTIONS=__KAFKA_TOPIC_PREDICTIONS__ \
+            KAFKA_CONSUMER_GROUP=__KAFKA_CONSUMER_GROUP__
           SEED
           sed -i "s|__CASSANDRA_PASSWORD__|${CASSANDRA_PASSWORD}|" vault/seed.sh
+          sed -i "s|__KAFKA_BOOTSTRAP_SERVERS__|${KAFKA_BOOTSTRAP_SERVERS}|" vault/seed.sh
+          sed -i "s|__KAFKA_TOPIC_PREDICTIONS__|${KAFKA_TOPIC_PREDICTIONS}|" vault/seed.sh
+          sed -i "s|__KAFKA_CONSUMER_GROUP__|${KAFKA_CONSUMER_GROUP}|" vault/seed.sh
+          if grep -q '__[A-Z_]*__' vault/seed.sh; then
+            echo "В seed.sh остались неподставленные плейсхолдеры:"; grep -o '__[A-Z_]*__' vault/seed.sh
+            exit 1
+          fi
 
       - name: Pull model checkpoint
         env:
